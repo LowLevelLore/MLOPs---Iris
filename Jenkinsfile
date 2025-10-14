@@ -8,6 +8,13 @@ pipeline {
   }
 
   stages {
+
+    stage('Checkout Code') {
+        steps {
+            git branch: 'main', url: 'file:///D:/MLOPs%20-%20Iris'
+        }
+    }
+
     stage('Load project from local folder') {
       steps {
         script {
