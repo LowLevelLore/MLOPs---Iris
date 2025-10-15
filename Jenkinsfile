@@ -15,19 +15,7 @@ pipeline {
   }
 
   stages {
-    stage('Login & Push to GHCR') {
-      steps {
-        withCredentials([string(credentialsId: 'ghcr-pat', variable: 'GHCR_PAT')]) {
-          script {
-            sh """
-              echo $GHCR_PAT | docker login ghcr.io --username <GITHUB_USER> --password-stdin
-              echo "${GHCR_PAT}" | docker login ghcr.io --username ${env.GHCR_OWNER} --password-stdin
-              docker push ${env.FULL_IMAGE}
-            """
-          }
-        }
-      }
-    }
+    stage('Checkout Code') { steps { script { def gitCredsId = 'ghcr-creds' if (gitCredsId?.trim()) { checkout([$class: 'GitSCM', branches: [[name: params.GIT_BRANCH]], userRemoteConfigs: [[url: params.GITHUB_REPO, credentialsId: gitCredsId]] ]) } else { git branch: params.GIT_BRANCH, url: params.GITHUB_REPO } } } }
 
     stage('Load project from workspace') {
       steps {
@@ -75,16 +63,13 @@ pipeline {
 
     stage('Login & Push to GHCR') {
       steps {
-        script {
-          def ghcrCredsId = 'ghcr-creds'
-          if (!ghcrCredsId?.trim()) {
-            error("GHCR credentials id not configured. Create a Jenkins credential and set ghcrCredsId variable.")
-          }
-
-          docker.withRegistry('https://ghcr.io', ghcrCredsId) {
-            def img = docker.image("${env.FULL_IMAGE}")
-            echo "Pushing image ${env.FULL_IMAGE} to GHCR..."
-            img.push() 
+        withCredentials([string(credentialsId: 'ghcr-pat', variable: 'GHCR_PAT')]) {
+          script {
+            sh """
+              echo $GHCR_PAT | docker login ghcr.io --username <GITHUB_USER> --password-stdin
+              echo "${GHCR_PAT}" | docker login ghcr.io --username ${env.GHCR_OWNER} --password-stdin
+              docker push ${env.FULL_IMAGE}
+            """
           }
         }
       }
