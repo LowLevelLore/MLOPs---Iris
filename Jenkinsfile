@@ -10,7 +10,7 @@ pipeline {
   parameters {
     string(name: 'GITHUB_REPO', defaultValue: 'https://github.com/LowLevelLore/MLOPs---Iris.git')
     string(name: 'GIT_BRANCH', defaultValue: 'main')
-    string(name: 'GHCR_OWNER', defaultValue: 'LowLevelLore')
+    string(name: 'GHCR_OWNER', defaultValue: 'lowlevellore')
   }
 
   stages {
