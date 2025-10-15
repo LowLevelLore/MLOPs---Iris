@@ -1,65 +1,68 @@
 pipeline {
   agent any
 
+  // You can override IMAGE_NAME and IMAGE_TAG as pipeline parameters if needed
   environment {
     IMAGE_NAME     = "flask-server"
     IMAGE_TAG      = "${env.BUILD_NUMBER ?: 'local'}"
     CONTAINER_NAME = "flask-server-container"
   }
 
+  parameters {
+    string(name: 'GITHUB_REPO', defaultValue: 'https://github.com/your-org/your-repo.git', description: 'HTTPS URL of the GitHub repo to checkout')
+    string(name: 'GIT_BRANCH', defaultValue: 'main', description: 'Branch to checkout')
+    string(name: 'GHCR_OWNER', defaultValue: 'your-org', description: 'GHCR owner (GitHub org or username). Image will be pushed to ghcr.io/<GHCR_OWNER>/<IMAGE_NAME>:<IMAGE_TAG>')
+  }
+
   stages {
-
-    stage('Checkout Code') {
-        steps {
-            git branch: 'main', url: 'file:///D:/MLOPs%20-%20Iris'
-        }
-    }
-
-    stage('Load project from local folder') {
+    stage('Login & Push to GHCR') {
       steps {
-        script {
-          if (isUnix()) {
-            sh '''ls -la'''
-          } else {
-            bat """dir"""
-          }
-        }
-      }
-    }
-
-    stage('Build Image') {
-      steps {
-        script {
-          if (isUnix()) {
+        withCredentials([string(credentialsId: 'ghcr-pat', variable: 'GHCR_PAT')]) {
+          script {
             sh """
-              echo "Building Docker image: ${IMAGE_NAME}:${IMAGE_TAG}"
-              docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
-            """
-          } else {
-            bat """
-              echo Building Docker image: ${IMAGE_NAME}:${IMAGE_TAG}
-              docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
+              echo $GHCR_PAT | docker login ghcr.io --username <GITHUB_USER> --password-stdin
+              echo "${GHCR_PAT}" | docker login ghcr.io --username ${env.GHCR_OWNER} --password-stdin
+              docker push ${env.FULL_IMAGE}
             """
           }
         }
       }
     }
 
-    stage('Run Tests') {
+    stage('Load project from workspace') {
       steps {
         script {
           if (isUnix()) {
-            sh """
-              set -e
-              echo "Running tests inside container"
-              docker run --rm ${IMAGE_NAME}:${IMAGE_TAG} pytest -q
-            """
+            sh 'ls -la'
           } else {
-            bat """
-              @echo off
-              echo Running tests inside container
-              docker run --rm ${IMAGE_NAME}:${IMAGE_TAG} pytest -q
-            """
+            bat 'dir'
+          }
+        }
+      }
+    }
+
+    stage('Build & Tag Image') {
+      steps {
+        script {
+          env.FULL_IMAGE = "ghcr.io/${params.GHCR_OWNER}/${env.IMAGE_NAME}:${env.IMAGE_TAG}"
+
+          echo "Building Docker image: ${env.FULL_IMAGE}"
+          def built = docker.build("${env.FULL_IMAGE}", ".")
+          env.BUILT_IMAGE = built.id
+        }
+      }
+    }
+
+    stage('Run Tests inside Image') {
+      steps {
+        script {
+          echo "Running tests inside image ${env.FULL_IMAGE}"
+          docker.image("${env.FULL_IMAGE}").inside("--rm") {
+            if (isUnix()) {
+              sh 'pytest -q || { echo "Tests failed"; exit 1; }'
+            } else {
+              bat 'pytest -q'
+            }
           }
         }
       }
@@ -70,26 +73,18 @@ pipeline {
       }
     }
 
-    stage('Deploy') {
+    stage('Login & Push to GHCR') {
       steps {
         script {
-          if (isUnix()) {
-            sh """
-              set -e
-              echo "Deploying ${IMAGE_NAME}:${IMAGE_TAG} -> docker run -p 5000:5000"
-              if docker ps -a --format '{{.Names}}' | grep -w ${CONTAINER_NAME} >/dev/null 2>&1; then
-                echo "Stopping existing container ${CONTAINER_NAME}"
-                docker stop ${CONTAINER_NAME} || true
-                docker rm ${CONTAINER_NAME} || true
-              fi
-              docker run -d --name ${CONTAINER_NAME} -p 5000:5000 ${IMAGE_NAME}:${IMAGE_TAG}
-            """
-          } else {
-            bat """
-              @echo off
-              echo Deploying ${IMAGE_NAME}:${IMAGE_TAG} -> docker run -p 5000:5000
-              docker run -d --name ${CONTAINER_NAME} -p 5000:5000 ${IMAGE_NAME}:${IMAGE_TAG}
-            """
+          def ghcrCredsId = 'ghcr-creds'
+          if (!ghcrCredsId?.trim()) {
+            error("GHCR credentials id not configured. Create a Jenkins credential and set ghcrCredsId variable.")
+          }
+
+          docker.withRegistry('https://ghcr.io', ghcrCredsId) {
+            def img = docker.image("${env.FULL_IMAGE}")
+            echo "Pushing image ${env.FULL_IMAGE} to GHCR..."
+            img.push() 
           }
         }
       }
@@ -98,7 +93,7 @@ pipeline {
 
   post {
     success {
-      echo "Pipeline succeeded. ${IMAGE_NAME}:${IMAGE_TAG} deployed on port 5000."
+      echo "Pipeline succeeded. ${env.FULL_IMAGE} pushed to ghcr.io and deployed on port 5000."
     }
     failure {
       echo "Pipeline failed."
