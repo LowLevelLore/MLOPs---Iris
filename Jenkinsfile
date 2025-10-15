@@ -10,7 +10,7 @@ pipeline {
   parameters {
     string(name: 'GITHUB_REPO', defaultValue: 'https://github.com/LowLevelLore/MLOPs---Iris.git', description: 'HTTPS URL of the GitHub repo to checkout')
     string(name: 'GIT_BRANCH', defaultValue: 'main', description: 'Branch to checkout')
-    string(name: 'GHCR_OWNER', defaultValue: 'your-gh-user-or-org', description: 'GHCR owner (org or username)')
+    string(name: 'GHCR_OWNER', defaultValue: 'LowLevelLore', description: 'GHCR owner (org or username)')
   }
 
   stages {
